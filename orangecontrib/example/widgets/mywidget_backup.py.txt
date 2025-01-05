@@ -1,0 +1,119 @@
+import numpy as np
+from Orange.data import Table, Domain, ContinuousVariable
+from Orange.widgets import gui
+from Orange.widgets.settings import Setting
+from Orange.widgets.widget import OWWidget, Input, Output
+from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout
+
+class SumColumnsWidget(OWWidget):
+    name = "Sum Columns Widget"
+    description = "Calculates the sum of two selected columns."
+    icon = "icons/mywidget.svg"
+    priority = 100
+    keywords = ["widget", "data"]
+    want_main_area = False
+    resizing_enabled = False
+    
+    selected_column1 = Setting(0)
+    selected_column2 = Setting(1)
+    
+    class Inputs:
+        data = Input("Data", Table)
+
+    class Outputs:
+        result = Output("Result", Table, default=True)
+    
+    def __init__(self):
+        super().__init__()
+        self.data = None
+        self.column_names = []
+        
+        self.layout = QVBoxLayout()
+        self.controlArea.setLayout(self.layout)
+
+        # Create dropdowns for column selection
+        self.column1_combo = gui.comboBox(
+            self.controlArea, self, "selected_column1", box="Select Column 1",
+            callback=self.update_column1
+        )
+        self.column2_combo = gui.comboBox(
+            self.controlArea, self, "selected_column2", box="Select Column 2",
+            callback=self.update_column2
+        )
+
+        # Add a button to trigger calculation
+        self.calculate_button = gui.button(
+            self.controlArea, self, "Calculate", callback=self.calculate_sum
+        )
+
+        # Table widget to display the results
+        self.result_table = QTableWidget()
+        self.layout.addWidget(self.result_table)
+        
+    def update_column1(self):
+        self.selected_column1 = self.column1_combo.currentIndex()
+
+    def update_column2(self):
+        self.selected_column2 = self.column2_combo.currentIndex()
+
+    @Inputs.data
+    def set_data(self, data):
+        self.data = data
+        self.column1_combo.clear()
+        self.column2_combo.clear()
+        if data:
+            self.column_names = [var.name for var in data.domain.attributes]
+            for var in self.column_names:
+                self.column1_combo.addItem(var)
+                self.column2_combo.addItem(var)
+        else:
+            self.column_names = []
+        self.clear_results()
+        
+    def clear_results(self):
+        self.result_table.clear()
+        self.result_table.setRowCount(0)
+        self.result_table.setColumnCount(0)
+        self.Outputs.result.send(None)
+
+    def calculate_sum(self):
+        if not self.data or len(self.column_names) <= max(self.selected_column1, self.selected_column2):
+            self.clear_results()
+            return
+        
+        try:
+            col1 = self.data[:, self.selected_column1].X.flatten()
+            col2 = self.data[:, self.selected_column2].X.flatten()
+            result = col1 + col2
+
+            # Create new domain with only selected columns and result column
+            selected_var1 = self.data.domain[self.selected_column1]
+            selected_var2 = self.data.domain[self.selected_column2]
+            new_domain = Domain([selected_var1, selected_var2, ContinuousVariable("Result")])
+
+            # Create new data table
+            new_data = np.column_stack((col1, col2, result))
+            new_table = Table(new_domain, new_data)
+
+            # Display the result in the table widget
+            self.result_table.setRowCount(len(result))
+            self.result_table.setColumnCount(3)
+            self.result_table.setHorizontalHeaderLabels([self.column_names[self.selected_column1], self.column_names[self.selected_column2], "Result"])
+            for i in range(len(result)):
+                self.result_table.setItem(i, 0, QTableWidgetItem(str(col1[i])))
+                self.result_table.setItem(i, 1, QTableWidgetItem(str(col2[i])))
+                self.result_table.setItem(i, 2, QTableWidgetItem(str(result[i])))
+            
+            self.Outputs.result.send(new_table)
+        except Exception as e:
+            print(f"Error during calculation: {e}")
+            self.clear_results()
+    
+    def send_report(self):
+        self.report_caption("Column Sum Widget Report")
+        self.report_items("Settings", [("Selected Column 1", self.column_names[self.selected_column1]),
+                                       ("Selected Column 2", self.column_names[self.selected_column2])])
+
+if __name__ == "__main__":
+    from Orange.widgets.utils.widgetpreview import WidgetPreview
+    WidgetPreview(SumColumnsWidget).run()

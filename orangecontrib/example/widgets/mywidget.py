@@ -19,7 +19,6 @@ class SumColumnsWidget(OWWidget):
     selected_column2 = Setting(1)
     selected_primary_key = Setting(0)
     concatenate = Setting(False)
-    disallow_duplicate_names = Setting(False)
     
     class Inputs:
         data = Input("Data", Table)
@@ -31,6 +30,7 @@ class SumColumnsWidget(OWWidget):
         super().__init__()
         self.data = None
         self.column_names = []
+        self.previous_columns = {}
         
         self.layout = QVBoxLayout()
         self.controlArea.setLayout(self.layout)
@@ -50,11 +50,6 @@ class SumColumnsWidget(OWWidget):
             self.controlArea, self, "concatenate", "Concatenate columns", callback=self.update_concatenate
         )
 
-        # Tickbox to disallow duplicate names
-        self.duplicate_names_tickbox = gui.checkBox(
-            self.controlArea, self, "disallow_duplicate_names", "Disallow duplicate names"
-        )
-
         # Combo box to select primary key if not concatenating
         self.primary_key_combo = gui.comboBox(
             self.controlArea, self, "selected_primary_key", box="Select Primary Key Column",
@@ -68,7 +63,6 @@ class SumColumnsWidget(OWWidget):
 
         # Table widget to display the results
         self.result_table = QTableWidget()
-        self.layout.addWidget(self.result_table)
         
     def update_column1(self):
         # print(f"update_column1: {self.column1_combo.currentIndex()}")
@@ -93,20 +87,36 @@ class SumColumnsWidget(OWWidget):
         self.column1_combo.clear()
         self.column2_combo.clear()
         self.primary_key_combo.clear()
+        
         if data:
             self.column_names = [var.name for var in data.domain.attributes]
-            # print(f"column_names: {self.column_names}")
-            for var in self.column_names:
-                self.column1_combo.addItem(var)
-                self.column2_combo.addItem(var)
-                self.primary_key_combo.addItem(var)
-            # Reset selected columns to valid indices
-            self.selected_column1 = 0
-            self.selected_column2 = min(1, len(self.column_names) - 1)
-            self.selected_primary_key = 0
+            # Check if the new data contains the previously selected columns
+            previous_columns_exist = all(
+                col in self.column_names for col in self.previous_columns.values()
+            )
+            if previous_columns_exist:
+                # Keep the selected columns
+                self.column1_combo.addItems(self.column_names)
+                self.column2_combo.addItems(self.column_names)
+                self.primary_key_combo.addItems(self.column_names)
+                self.calculate_sum()
+            else:
+                # Reset the selected columns to valid indices
+                self.previous_columns = {
+                    'selected_column1': self.column_names[self.selected_column1],
+                    'selected_column2': self.column_names[self.selected_column2],
+                    'selected_primary_key': self.column_names[self.selected_primary_key]
+                }
+                for var in self.column_names:
+                    self.column1_combo.addItem(var)
+                    self.column2_combo.addItem(var)
+                    self.primary_key_combo.addItem(var)
+                self.selected_column1 = 0
+                self.selected_column2 = min(1, len(self.column_names) - 1)
+                self.selected_primary_key = 0
         else:
             self.column_names = []
-        self.clear_results()
+            self.previous_columns = {}
         
     def clear_results(self):
         # print("clear_results")
@@ -118,12 +128,12 @@ class SumColumnsWidget(OWWidget):
     def calculate_sum(self):
         # print("calculate_sum")
         if not self.data:
-            # print("No data available")
+            print("No data available")
             self.clear_results()
             return
 
         if self.selected_column1 >= len(self.column_names) or self.selected_column2 >= len(self.column_names):
-            # print(f"Invalid column selection: selected_column1={self.selected_column1}, selected_column2={self.selected_column2}")
+            print(f"Invalid column selection: selected_column1={self.selected_column1}, selected_column2={self.selected_column2}")
             self.clear_results()
             return
 
@@ -131,7 +141,9 @@ class SumColumnsWidget(OWWidget):
             col1 = self.data[:, self.selected_column1].X.flatten()
             col2 = self.data[:, self.selected_column2].X.flatten()
             result = col1 + col2
-            # print(f"col1: {col1}, col2: {col2}, result: {result}")
+            print(f"col1: {col1}, col2: {col2}, result: {result}")
+            
+            result_name = "Result"
 
             if self.concatenate:
                 try:
@@ -149,10 +161,6 @@ class SumColumnsWidget(OWWidget):
                     selected_var1 = self.data.domain[self.selected_column1]
                     selected_var2 = self.data.domain[self.selected_column2]
                     primary_key_var = self.data.domain[self.selected_primary_key]
-
-                    result_name = "Result"
-                    if self.disallow_duplicate_names:
-                        result_name = self.get_unique_name(result_name, self.column_names)
 
                     result_var = ContinuousVariable(result_name)
 
@@ -177,7 +185,7 @@ class SumColumnsWidget(OWWidget):
                         print(f"Error during table creation with hash fix: {e}")
                         self.clear_results()
                         return
-
+                    
             # Display the result in the table widget
             try:
                 self.result_table.setRowCount(len(result))
@@ -201,6 +209,10 @@ class SumColumnsWidget(OWWidget):
         except Exception as e:
             print(f"Error during calculation: {e}")
             self.clear_results()
+        finally:
+            # Ensure the calculation is retried if an error occurred
+            if 'new_table' not in locals():
+                self.calculate_sum()
             
     def get_unique_name(self, base_name, existing_names):
         """Generate a unique name by appending a number to the base name."""
@@ -218,8 +230,7 @@ class SumColumnsWidget(OWWidget):
         self.report_items("Settings", [("Selected Column 1", self.column_names[self.selected_column1]),
                                        ("Selected Column 2", self.column_names[self.selected_column2]),
                                        ("Concatenate", self.concatenate),
-                                       ("Primary Key Column", self.column_names[self.selected_primary_key] if not self.concatenate else "N/A"),
-                                       ("Disallow Duplicate Names", self.disallow_duplicate_names)])
+                                       ("Primary Key Column", self.column_names[self.selected_primary_key] if not self.concatenate else "N/A")])
 
 if __name__ == "__main__":
     from Orange.widgets.utils.widgetpreview import WidgetPreview

@@ -4,9 +4,12 @@ from Orange.data import Table, Domain, ContinuousVariable
 from Orange.widgets import gui
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Input, Output
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout
+from PyQt5.QtWidgets import QTableWidget, QVBoxLayout
 
 class SumColumnsWidget(OWWidget):
+    """Widget that sums two selected columns from input data."""
+    
+    # Widget metadata
     name = "Sum Columns Widget"
     description = "Calculates the sum of two selected columns."
     icon = "icons/mywidget.svg"
@@ -15,11 +18,13 @@ class SumColumnsWidget(OWWidget):
     want_main_area = False
     resizing_enabled = False
     
+    # Settings
     selected_column1 = Setting(0)
     selected_column2 = Setting(1)
     selected_primary_key = Setting(0)
     concatenate = Setting(False)
     
+    # I/O definitions
     class Inputs:
         data = Input("Data", Table)
 
@@ -27,210 +32,178 @@ class SumColumnsWidget(OWWidget):
         result = Output("Result", Table, default=True)
     
     def __init__(self):
+        """Initialize the widget and setup UI components."""
         super().__init__()
         self.data = None
         self.column_names = []
         self.previous_columns = {}
         
+        # Setup UI
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        """Initialize and setup the user interface components."""
         self.layout = QVBoxLayout()
         self.controlArea.setLayout(self.layout)
 
-        # Create dropdowns for column selection
+        # Column selection controls
         self.column1_combo = gui.comboBox(
-            self.controlArea, self, "selected_column1", box="Select Column 1",
-            callback=self.update_column1
+            self.controlArea, self, "selected_column1", 
+            box="Select Column 1", callback=lambda: self._update_selection('column1')
         )
         self.column2_combo = gui.comboBox(
-            self.controlArea, self, "selected_column2", box="Select Column 2",
-            callback=self.update_column2
+            self.controlArea, self, "selected_column2",
+            box="Select Column 2", callback=lambda: self._update_selection('column2')
         )
 
-        # Tickbox to choose whether to concatenate columns
+        # Concatenation controls
         self.concatenate_tickbox = gui.checkBox(
-            self.controlArea, self, "concatenate", "Concatenate columns", callback=self.update_concatenate
+            self.controlArea, self, "concatenate", 
+            "Concatenate columns", callback=self._toggle_primary_key
         )
 
-        # Combo box to select primary key if not concatenating
         self.primary_key_combo = gui.comboBox(
-            self.controlArea, self, "selected_primary_key", box="Select Primary Key Column",
-            callback=self.update_primary_key, enabled=not self.concatenate
+            self.controlArea, self, "selected_primary_key",
+            box="Select Primary Key Column",
+            callback=lambda: self._update_selection('primary_key'),
+            enabled=not self.concatenate
         )
 
-        # Add a button to trigger calculation
-        self.calculate_button = gui.button(
-            self.controlArea, self, "Calculate", callback=self.calculate_sum
-        )
-
-        # Table widget to display the results
+        gui.button(self.controlArea, self, "Calculate", callback=self.calculate_sum)
         self.result_table = QTableWidget()
-        
-    def update_column1(self):
-        # print(f"update_column1: {self.column1_combo.currentIndex()}")
-        self.selected_column1 = self.column1_combo.currentIndex()
 
-    def update_column2(self):
-        # print(f"update_column2: {self.column2_combo.currentIndex()}")
-        self.selected_column2 = self.column2_combo.currentIndex()
+    def _update_selection(self, field):
+        """Update the selected column indices."""
+        if field == 'column1':
+            self.selected_column1 = self.column1_combo.currentIndex()
+        elif field == 'column2':
+            self.selected_column2 = self.column2_combo.currentIndex()
+        elif field == 'primary_key':
+            self.selected_primary_key = self.primary_key_combo.currentIndex()
 
-    def update_primary_key(self):
-        # print(f"update_primary_key: {self.primary_key_combo.currentIndex()}")
-        self.selected_primary_key = self.primary_key_combo.currentIndex()
-
-    def update_concatenate(self):
-        # print(f"update_concatenate: {self.concatenate}")
+    def _toggle_primary_key(self):
+        """Toggle primary key combo box based on concatenate checkbox."""
         self.primary_key_combo.setDisabled(self.concatenate)
 
     @Inputs.data
     def set_data(self, data):
-        # print(f"set_data: {data}")
+        """Handle input data and update UI accordingly."""
         self.data = data
-        self.column1_combo.clear()
-        self.column2_combo.clear()
-        self.primary_key_combo.clear()
+        self._reset_combos()
         
         if data:
             self.column_names = [var.name for var in data.domain.attributes]
-            # Check if the new data contains the previously selected columns
-            previous_columns_exist = all(
-                col in self.column_names for col in self.previous_columns.values()
-            )
-            if previous_columns_exist:
-                # Keep the selected columns
-                self.column1_combo.addItems(self.column_names)
-                self.column2_combo.addItems(self.column_names)
-                self.primary_key_combo.addItems(self.column_names)
-                self.calculate_sum()
-            else:
-                # Reset the selected columns to valid indices
-                self.previous_columns = {
-                    'selected_column1': self.column_names[self.selected_column1],
-                    'selected_column2': self.column_names[self.selected_column2],
-                    'selected_primary_key': self.column_names[self.selected_primary_key]
-                }
-                for var in self.column_names:
-                    self.column1_combo.addItem(var)
-                    self.column2_combo.addItem(var)
-                    self.primary_key_combo.addItem(var)
-                self.selected_column1 = 0
-                self.selected_column2 = min(1, len(self.column_names) - 1)
-                self.selected_primary_key = 0
+            self._populate_combos()
+            self.calculate_sum()
         else:
             self.column_names = []
             self.previous_columns = {}
+
+    def _reset_combos(self):
+        """Clear all combo boxes."""
+        for combo in [self.column1_combo, self.column2_combo, self.primary_key_combo]:
+            combo.clear()
+
+    def _populate_combos(self):
+        """Populate combo boxes with column names."""
+        for var in self.column_names:
+            for combo in [self.column1_combo, self.column2_combo, self.primary_key_combo]:
+                combo.addItem(var)
         
-    def clear_results(self):
-        # print("clear_results")
+        # Set default selections
+        self.selected_column1 = 0
+        self.selected_column2 = min(1, len(self.column_names) - 1)
+        self.selected_primary_key = 0
+
+    def _clear_results(self):
+        """Clear the results table and output."""
         self.result_table.clear()
         self.result_table.setRowCount(0)
         self.result_table.setColumnCount(0)
         self.Outputs.result.send(None)
 
     def calculate_sum(self):
-        # print("calculate_sum")
-        if not self.data:
-            print("No data available")
-            self.clear_results()
-            return
-
-        if self.selected_column1 >= len(self.column_names) or self.selected_column2 >= len(self.column_names):
-            print(f"Invalid column selection: selected_column1={self.selected_column1}, selected_column2={self.selected_column2}")
-            self.clear_results()
+        """Calculate sum of selected columns and create output table."""
+        if not self._validate_input():
+            self._clear_results()
             return
 
         try:
+            # Get column data
             col1 = self.data[:, self.selected_column1].X.flatten()
             col2 = self.data[:, self.selected_column2].X.flatten()
             result = col1 + col2
-            print(f"col1: {col1}, col2: {col2}, result: {result}")
-            
-            result_name = "Result"
 
-            if self.concatenate:
-                try:
-                    # Concatenate with proper data domains handling
-                    new_domain = Domain(self.data.domain.attributes + (ContinuousVariable("Result"),))
-                    new_data = np.column_stack((self.data.X, result.reshape(-1, 1)))
-                    new_table = Table(new_domain, new_data)
-                except Exception as e:
-                    print(f"Error during concatenation: {e}")
-                    self.clear_results()
-                    return
-            else:
-                try:
-                    # Select variables
-                    selected_var1 = self.data.domain[self.selected_column1]
-                    selected_var2 = self.data.domain[self.selected_column2]
-                    primary_key_var = self.data.domain[self.selected_primary_key]
+            # Create output table
+            new_table = self._create_output_table(col1, col2, result)
+            if new_table:
+                self.Outputs.result.send(new_table)
 
-                    result_var = ContinuousVariable(result_name)
-
-                    new_domain = Domain([primary_key_var, selected_var1, selected_var2, result_var])
-                    
-                    primary_key_col = self.data[:, self.selected_primary_key].X.flatten()
-                    new_data = np.column_stack((primary_key_col, col1, col2, result))
-                    new_table = Table(new_domain, new_data)
-                except Exception as e:
-                    print(f"Error during table creation: {e}")
-
-                    # Fix for duplicate names by appending a hash to the primary key column name
-                    try:
-                        primary_key_name = primary_key_var.name
-                        primary_key_hash = hashlib.sha256(primary_key_name.encode()).hexdigest()[:8]
-                        primary_key_var = ContinuousVariable(f"{primary_key_name}_{primary_key_hash}")
-                        primary_key_col = self.data[:, self.selected_primary_key].X.flatten()
-                        new_domain = Domain([primary_key_var, selected_var1, selected_var2, result_var])
-                        new_data = np.column_stack((primary_key_col, col1, col2, result))
-                        new_table = Table(new_domain, new_data)
-                    except Exception as e:
-                        print(f"Error during table creation with hash fix: {e}")
-                        self.clear_results()
-                        return
-                    
-            # Display the result in the table widget
-            try:
-                self.result_table.setRowCount(len(result))
-                self.result_table.setColumnCount(4 if not self.concatenate else len(new_domain.attributes))
-                headers = [primary_key_var.name] if not self.concatenate else []
-                headers.extend([self.column_names[self.selected_column1], self.column_names[self.selected_column2], result_name])
-                self.result_table.setHorizontalHeaderLabels(headers)
-                for i in range(len(result)):
-                    if not self.concatenate:
-                        self.result_table.setItem(i, 0, QTableWidgetItem(str(primary_key_col[i])))
-                    self.result_table.setItem(i, 1 if not self.concatenate else len(self.data.domain.attributes) - 1, QTableWidgetItem(str(col1[i])))
-                    self.result_table.setItem(i, 2 if not self.concatenate else len(self.data.domain.attributes), QTableWidgetItem(str(col2[i])))
-                    self.result_table.setItem(i, 3 if not self.concatenate else len(self.data.domain.attributes) + 1, QTableWidgetItem(str(result[i])))
-                # print("Results displayed in the table")
-            except Exception as e:
-                print(f"Error displaying results: {e}")
-                self.clear_results()
-                return
-
-            self.Outputs.result.send(new_table)
         except Exception as e:
             print(f"Error during calculation: {e}")
-            self.clear_results()
-        finally:
-            # Ensure the calculation is retried if an error occurred
-            if 'new_table' not in locals():
-                self.calculate_sum()
-            
-    def get_unique_name(self, base_name, existing_names):
-        """Generate a unique name by appending a number to the base name."""
-        if base_name not in existing_names:
-            return base_name
-        counter = 1
-        new_name = f"{base_name}_{counter}"
-        while new_name in existing_names:
-            counter += 1
-            new_name = f"{base_name}_{counter}"
-        return new_name
+            self._clear_results()
+
+    def _validate_input(self):
+        """Validate input data and column selections."""
+        if not self.data:
+            return False
+        if self.selected_column1 >= len(self.column_names) or \
+           self.selected_column2 >= len(self.column_names):
+            return False
+        return True
+
+    def _create_output_table(self, col1, col2, result):
+        """Create output table based on concatenation setting."""
+        try:
+            if self.concatenate:
+                return self._create_concatenated_table(result)
+            return self._create_separate_table(col1, col2, result)
+        except Exception as e:
+            print(f"Error creating output table: {e}")
+            return None
+
+    def _create_concatenated_table(self, result):
+        """Create a table with concatenated columns."""
+        new_domain = Domain(self.data.domain.attributes + (ContinuousVariable("Result"),))
+        new_data = np.column_stack((self.data.X, result.reshape(-1, 1)))
+        return Table(new_domain, new_data)
+
+    def _create_separate_table(self, col1, col2, result):
+        """Create a table with separate columns including primary key."""
+        try:
+            # Get variables
+            selected_var1 = self.data.domain[self.selected_column1]
+            selected_var2 = self.data.domain[self.selected_column2]
+            primary_key_var = self.data.domain[self.selected_primary_key]
+            result_var = ContinuousVariable("Result")
+
+            # Create unique primary key name if needed
+            if len({primary_key_var.name, selected_var1.name, selected_var2.name}) < 3:
+                primary_key_var = self._create_unique_primary_key(primary_key_var.name)
+
+            new_domain = Domain([primary_key_var, selected_var1, selected_var2, result_var])
+            primary_key_col = self.data[:, self.selected_primary_key].X.flatten()
+            new_data = np.column_stack((primary_key_col, col1, col2, result))
+            return Table(new_domain, new_data)
+        except Exception as e:
+            print(f"Error in create_separate_table: {e}")
+            return None
+
+    def _create_unique_primary_key(self, base_name):
+        """Create a unique primary key variable name."""
+        key_hash = hashlib.sha256(base_name.encode()).hexdigest()[:8]
+        return ContinuousVariable(f"{base_name}_{key_hash}")
 
     def send_report(self):
+        """Generate widget report."""
         self.report_caption("Column Sum Widget Report")
-        self.report_items("Settings", [("Selected Column 1", self.column_names[self.selected_column1]),
-                                       ("Selected Column 2", self.column_names[self.selected_column2]),
-                                       ("Concatenate", self.concatenate),
-                                       ("Primary Key Column", self.column_names[self.selected_primary_key] if not self.concatenate else "N/A")])
+        self.report_items("Settings", [
+            ("Selected Column 1", self.column_names[self.selected_column1]),
+            ("Selected Column 2", self.column_names[self.selected_column2]),
+            ("Concatenate", self.concatenate),
+            ("Primary Key Column", self.column_names[self.selected_primary_key] \
+             if not self.concatenate else "N/A")
+        ])
 
 if __name__ == "__main__":
     from Orange.widgets.utils.widgetpreview import WidgetPreview

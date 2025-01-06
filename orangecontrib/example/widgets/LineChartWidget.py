@@ -3,7 +3,9 @@ import numpy as np
 from Orange.data import Table, Domain, ContinuousVariable, StringVariable
 from Orange.widgets import gui
 from Orange.widgets.widget import OWWidget, Input, Output
-from PyQt5.QtWidgets import QVBoxLayout, QLabel, QApplication
+from PyQt5.QtWidgets import (QVBoxLayout, QLabel, QApplication, 
+                            QSizePolicy, QWidget)
+from PyQt5.QtCore import Qt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
@@ -28,10 +30,34 @@ class LineChartWidget(OWWidget):
         self.resize(800, 600)
 
     def _setup_ui(self):
-        self.mainArea.layout().addWidget(QLabel("Line Chart"))
+        """Initialize and setup the user interface."""
+        # Create main layout
+        main_layout = QVBoxLayout()
+        main_widget = QWidget()
+        main_widget.setLayout(main_layout)
+        self.mainArea.layout().addWidget(main_widget)
+
+        # Add title with proper styling
+        title = QLabel("Line Chart")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                padding: 5px;
+            }
+        """)
+        title.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        main_layout.addWidget(title)
+
+        # Create figure
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
-        self.mainArea.layout().addWidget(self.canvas)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        main_layout.addWidget(self.canvas)
+
+        # Set margins
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(5)
 
     @Inputs.data
     def set_data(self, data):

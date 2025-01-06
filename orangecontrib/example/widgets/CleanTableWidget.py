@@ -2,7 +2,7 @@ import numpy as np
 from Orange.data import Table, Domain
 from Orange.widgets import gui
 from Orange.widgets.widget import OWWidget, Input, Output
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout
+from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QHBoxLayout
 
 class CleanTableWidget(OWWidget):
     """Widget that cleans a table by removing constant columns and rows with empty values."""
@@ -27,6 +27,7 @@ class CleanTableWidget(OWWidget):
         """Initialize the widget and setup UI components."""
         super().__init__()
         self.data = None
+        self.keep_non_empty_constant_columns = False  # Default value for the checkbox
 
         # Setup UI
         self._setup_ui()
@@ -39,8 +40,17 @@ class CleanTableWidget(OWWidget):
         self.layout = QVBoxLayout()
         self.controlArea.setLayout(self.layout)
 
+        # Checkbox to allow columns with the same value but not empty
+        self.keep_constant_columns_checkbox = gui.checkBox(
+            self.controlArea, self, "keep_non_empty_constant_columns",
+            "Keep columns with the same value but not empty",
+            callback=self.clean_table
+        )
+
         # Add a button to trigger cleaning
         gui.button(self.controlArea, self, "Clean Table", callback=self.clean_table)
+        
+        # Result table to display the cleaned data
         self.result_table = QTableWidget()
         self.layout.addWidget(self.result_table)
 
@@ -67,7 +77,10 @@ class CleanTableWidget(OWWidget):
 
     def _remove_constant_columns(self, data):
         """Remove columns that have the same value in all rows or are entirely empty."""
-        new_attributes = [var for var in data.domain.attributes if not self._is_constant_column(data, var)]
+        new_attributes = [
+            var for var in data.domain.attributes
+            if not self._is_constant_column(data, var)
+        ]
         new_domain = Domain(new_attributes)
         new_data = data.transform(new_domain)
         return new_data
@@ -76,6 +89,8 @@ class CleanTableWidget(OWWidget):
         """Check if a column is constant (same value in all rows or all empty)."""
         column_values = data[:, var].X.flatten()
         unique_values = np.unique(column_values[~np.isnan(column_values)])
+        if self.keep_non_empty_constant_columns and len(unique_values) == 1:
+            return False  # Keep columns with the same value but not empty
         return len(unique_values) <= 1
 
     def _remove_rows_with_empty_values(self, data):

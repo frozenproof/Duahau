@@ -1,8 +1,9 @@
+import sys
 import numpy as np
 from Orange.data import Table, Domain
 from Orange.widgets import gui
 from Orange.widgets.widget import OWWidget, Input, Output
-from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QHBoxLayout
+from PyQt5.QtWidgets import QTableWidget, QTableWidgetItem, QVBoxLayout, QApplication
 
 class CleanTableWidget(OWWidget):
     """Widget that cleans a table by removing constant columns and rows with empty values."""
@@ -16,7 +17,6 @@ class CleanTableWidget(OWWidget):
     want_main_area = False
     resizing_enabled = True  # Allow resizing
 
-    # I/O definitions
     class Inputs:
         data = Input("Data", Table)
 
@@ -33,7 +33,7 @@ class CleanTableWidget(OWWidget):
         self._setup_ui()
 
         # Set the default size of the widget
-        self.resize(800, 600)  # Width: 800, Height: 600
+        self.resize(800, 600)
 
     def _setup_ui(self):
         """Initialize and setup the user interface components."""
@@ -62,7 +62,7 @@ class CleanTableWidget(OWWidget):
 
     def clean_table(self):
         """Clean the input table and create output table."""
-        if not self.data:
+        if self.data is None:
             self._clear_results()
             return
 
@@ -89,8 +89,12 @@ class CleanTableWidget(OWWidget):
         """Check if a column is constant (same value in all rows or all empty)."""
         column_values = data[:, var].X.flatten()
         unique_values = np.unique(column_values[~np.isnan(column_values)])
-        if self.keep_non_empty_constant_columns and len(unique_values) == 1:
-            return False  # Keep columns with the same value but not empty
+        # If the column contains the same non-empty value in all rows, it is considered constant
+        if len(unique_values) == 1 and not np.isnan(unique_values[0]):
+            if self.keep_non_empty_constant_columns:
+                return False  # Keep columns with the same value but not empty
+            else:
+                return True  # Remove columns with the same value but not empty
         return len(unique_values) <= 1
 
     def _remove_rows_with_empty_values(self, data):

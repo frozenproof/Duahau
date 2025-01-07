@@ -55,6 +55,7 @@ class CustomProcessingWidget(OWWidget):
     icon = "icons/CustomProcess.svg"
     priority = 100
     keywords = ["custom", "python", "process"]
+    want_main_area = True  # Enable main area
     
     # Settings
     code = Setting(DEFAULT_CODE)
@@ -64,51 +65,101 @@ class CustomProcessingWidget(OWWidget):
         
     class Outputs:
         data = Output("Processed Data", Table)
-        
+
     def __init__(self):
         super().__init__()
         self.data = None
         self.input_mapping = {}
         self.setup_gui()
-        
+        self.resize(1200, 800)
+
     def setup_gui(self):
-        # Main layout with left and right sections
-        main_layout = QHBoxLayout()
-        left_panel = QWidget()
-        right_panel = QWidget()
-        left_layout = QVBoxLayout()
-        right_layout = QVBoxLayout()
-        left_panel.setLayout(left_layout)
-        right_panel.setLayout(right_layout)
-        main_layout.addWidget(left_panel, 1)
-        main_layout.addWidget(right_panel, 2)
+        # Control Area (Left Side) - For execution status
+        status_box = gui.widgetBox(self.controlArea, "Execution Status")
+        self.status_text = gui.widgetLabel(status_box, "Ready")
+        self.status_text.setStyleSheet("""
+            QLabel {
+                padding: 10px;
+                background-color: #f8f9fa;
+                border-radius: 5px;
+                min-height: 100px;
+            }
+        """)
+
+        # Main Area (Right Side)
+        main_widget = QWidget()  # Create a main widget
+        main_layout = QVBoxLayout()
+        main_widget.setLayout(main_layout)
+        self.mainArea.layout().addWidget(main_widget)  # Add to mainArea
         
-        # Left panel - Input mapping table
-        mapping_box = gui.widgetBox(left_panel, "Input Column Mapping")
+        # Split into upper and lower sections
+        upper_widget = QWidget()
+        upper_layout = QHBoxLayout()
+        upper_widget.setLayout(upper_layout)
+        
+        # Input mapping table section
+        mapping_box = gui.widgetBox(upper_widget, "Input Column Mapping")
+        mapping_box.setMinimumWidth(300)  # Set minimum width
         self.mapping_table = InputMappingTable()
         mapping_box.layout().addWidget(self.mapping_table)
+        upper_layout.addWidget(mapping_box)
         
-        # Right panel - Code editor
-        code_box = gui.widgetBox(right_panel, "Python Code")
+        # Code editor section
+        code_box = gui.widgetBox(upper_widget, "Python Code")
+        code_box.setMinimumWidth(500)  # Set minimum width
         self.code_edit = QTextEdit()
         self.code_edit.setPlainText(self.code)
         self.code_edit.textChanged.connect(self.code_changed)
         code_box.layout().addWidget(self.code_edit)
+        upper_layout.addWidget(code_box, stretch=2)
         
-        # Status and info
+        # Add upper section to main layout
+        main_layout.addWidget(upper_widget)
+        
+        # Lower section for info and buttons
+        lower_widget = QWidget()
+        lower_layout = QHBoxLayout()
+        lower_widget.setLayout(lower_layout)
+        
+        # Info label
         self.info_label = QLabel()
-        right_layout.addWidget(self.info_label)
+        self.info_label.setStyleSheet("padding: 5px;")
+        lower_layout.addWidget(self.info_label)
         
         # Process button
-        self.process_button = gui.button(
-            right_panel, self, "Process Data",
-            callback=self.process_data
-        )
+        self.process_button = QPushButton("Process Data")
+        self.process_button.clicked.connect(self.process_data)
+        self.process_button.setEnabled(False)
+        self.process_button.setStyleSheet("""
+            QPushButton {
+                padding: 8px 15px;
+                background-color: #007bff;
+                color: white;
+                border-radius: 4px;
+                min-width: 100px;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        lower_layout.addWidget(self.process_button)
         
-        # Set the main layout
-        widget = QWidget()
-        widget.setLayout(main_layout)
-        self.controlArea.layout().addWidget(widget)
+        # Add lower section to main layout
+        main_layout.addWidget(lower_widget)
+
+    def update_status(self, message, is_error=False):
+        """Update status message in the control area."""
+        color = "#dc3545" if is_error else "#28a745"  # red for error, green for success
+        self.status_text.setStyleSheet(f"""
+            QLabel {{
+                padding: 10px;
+                background-color: #f8f9fa;
+                border-radius: 5px;
+                min-height: 100px;
+                color: {color};
+            }}
+        """)
+        self.status_text.setText(message)
         
     def code_changed(self):
         """Handle code changes."""
@@ -162,6 +213,7 @@ class CustomProcessingWidget(OWWidget):
             gui.messageBox(self, f"Error in code: {str(e)}")
             return {}
             
+
     def process_data(self):
         """Process the data using the custom code."""
         if self.data is None:
@@ -171,7 +223,7 @@ class CustomProcessingWidget(OWWidget):
             # Get functions from code
             functions = self.extract_functions(self.code)
             if not functions:
-                gui.messageBox(self, "No valid functions found in code!")
+                self.update_status("No valid functions found in code!", True)
                 return
                 
             # Convert input data to DataFrame
@@ -191,8 +243,8 @@ class CustomProcessingWidget(OWWidget):
                 
                 # Check if all required parameters are available
                 if not all(param in input_arrays for param in params):
-                    gui.messageBox(self, f"Missing input arrays for function {func_name}")
-                    continue
+                    self.update_status(f"Missing input arrays for function {func_name}", True)
+                    return
                 
                 # Execute function with input arrays
                 args = [input_arrays[param] for param in params]
@@ -229,13 +281,22 @@ class CustomProcessingWidget(OWWidget):
             self.Outputs.data.send(new_data)
             
             # Update status
-            self.info_label.setText(
-                f"Processing complete: {len(new_columns)} new columns added\n"
-                f"Total columns: {len(new_domain.attributes)}"
+            success_message = (
+                f"Processing complete:\n"
+                f"- {len(new_columns)} new columns added\n"
+                f"- Total columns: {len(new_domain.attributes)}\n"
+                f"- Rows processed: {len(df)}"
             )
+            self.update_status(success_message)
             
         except Exception as e:
-            gui.messageBox(self, f"Error processing data: {str(e)}")
+            import traceback
+            error_message = (
+                f"Error processing data:\n"
+                f"{str(e)}\n\n"
+                f"Traceback:\n{traceback.format_exc()}"
+            )
+            self.update_status(error_message, True)
 
 if __name__ == "__main__":
     from Orange.widgets.utils.widgetpreview import WidgetPreview

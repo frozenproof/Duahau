@@ -84,7 +84,7 @@ class CustomProcessingWidget(OWWidget):
     
     # Add new settings
     # Settings with version control
-    settings_version = 2  # Increment this when making significant changes to defaults
+    settings_version = 3  # Increment this when making significant changes to defaults
     settings_changed_time = Setting("2025-01-07 02:13:06")  # Current timestamp
     code = Setting(DEFAULT_CODE)
     auto_process = Setting(True)  # New setting for auto-processing
@@ -98,7 +98,7 @@ class CustomProcessingWidget(OWWidget):
     @classmethod
     def migrate_settings(cls, settings, version):
         """Migrate settings to newer version."""
-        if version < 2:
+        if version < 3:
             # Update code to new default
             settings["code"] = DEFAULT_CODE
             settings["settings_changed_time"] = "2025-01-07 02:13:06"
@@ -170,7 +170,6 @@ class CustomProcessingWidget(OWWidget):
                 padding: 10px;
                 background-color: #f8f9fa;
                 border-radius: 5px;
-                word-wrap: break-word;
             }
         """)
         self.dir_label.setWordWrap(True)

@@ -9,7 +9,8 @@ from Orange.widgets.widget import OWWidget, Input, Output
 from Orange.widgets.settings import Setting
 from PyQt5.QtWidgets import (QVBoxLayout, QHBoxLayout, QLabel, QApplication, 
                             QSizePolicy, QWidget, QPushButton, QTextEdit, 
-                            QTableWidget, QTableWidgetItem, QHeaderView)
+                            QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox)
+
 from PyQt5.QtCore import Qt
 
 DEFAULT_CODE = """def fn_0(arr_0, arr_1):
@@ -57,8 +58,9 @@ class CustomProcessingWidget(OWWidget):
     keywords = ["custom", "python", "process"]
     want_main_area = True  # Enable main area
     
-    # Settings
+    # Add new settings
     code = Setting(DEFAULT_CODE)
+    auto_process = Setting(True)  # New setting for auto-processing
     
     class Inputs:
         data = Input("Data", Table)
@@ -85,6 +87,15 @@ class CustomProcessingWidget(OWWidget):
                 min-height: 100px;
             }
         """)
+
+        # Add auto-process checkbox to control area
+        auto_process_box = gui.widgetBox(self.controlArea, "Settings")
+        self.auto_process_cb = gui.checkBox(
+            auto_process_box, self, 'auto_process',
+            'Auto-process on data load',
+            tooltip='Automatically process data when new data is loaded',
+            callback=self.auto_process_changed
+        )
 
         # Main Area (Right Side)
         main_widget = QWidget()  # Create a main widget
@@ -121,11 +132,25 @@ class CustomProcessingWidget(OWWidget):
         lower_layout = QHBoxLayout()
         lower_widget.setLayout(lower_layout)
         
+        # Status indicator
+        self.status_indicator = QLabel()
+        self.status_indicator.setStyleSheet("""
+            QLabel {
+                padding: 5px;
+                border-radius: 3px;
+                font-weight: bold;
+            }
+        """)
+        lower_layout.addWidget(self.status_indicator)
+        
         # Info label
         self.info_label = QLabel()
         self.info_label.setStyleSheet("padding: 5px;")
         lower_layout.addWidget(self.info_label)
         
+        # Add spacer to push button to the right
+        lower_layout.addStretch()
+
         # Process button
         self.process_button = QPushButton("Process Data")
         self.process_button.clicked.connect(self.process_data)
@@ -147,6 +172,46 @@ class CustomProcessingWidget(OWWidget):
         # Add lower section to main layout
         main_layout.addWidget(lower_widget)
 
+        # Initialize status
+        self.update_status_indicator()
+
+    def update_status_indicator(self):
+        """Update the status indicator based on auto-process setting."""
+        if self.auto_process:
+            self.status_indicator.setText("🔄 Auto-process: ON")
+            self.status_indicator.setStyleSheet("""
+                QLabel {
+                    padding: 5px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                    color: #28a745;
+                }
+            """)
+        else:
+            self.status_indicator.setText("⏸️ Auto-process: OFF")
+            self.status_indicator.setStyleSheet("""
+                QLabel {
+                    padding: 5px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                    color: #6c757d;
+                }
+            """)
+
+    def auto_process_changed(self):
+        """Handle changes to auto-process setting."""
+        self.update_status_indicator()
+        if self.auto_process and self.data is not None:
+            self.process_data()
+
+    def validate_code(self):
+        """Validate the current code and return True if valid."""
+        try:
+            functions = self.extract_functions(self.code)
+            return bool(functions)  # Return True if we have valid functions
+        except Exception:
+            return False
+            
     def update_status(self, message, is_error=False):
         """Update status message in the control area."""
         color = "#dc3545" if is_error else "#28a745"  # red for error, green for success
@@ -182,7 +247,7 @@ class CustomProcessingWidget(OWWidget):
             f"Available columns: {len(column_names)}\n"
             "Use input names (arr_0, arr_1, etc.) in your functions"
         )
-        
+
     @Inputs.data
     def set_data(self, data):
         """Handle input data."""
@@ -190,6 +255,10 @@ class CustomProcessingWidget(OWWidget):
         if data is not None:
             self.update_input_mapping()
             self.process_button.setEnabled(True)
+            
+            # Auto-process if enabled and code is valid
+            if self.auto_process and self.validate_code():
+                self.process_data()
         else:
             self.info_label.setText("No data loaded")
             self.process_button.setEnabled(False)
@@ -225,6 +294,10 @@ class CustomProcessingWidget(OWWidget):
             if not functions:
                 self.update_status("No valid functions found in code!", True)
                 return
+                
+            # Update status to show processing
+            self.update_status("Processing data...", False)
+            self.process_button.setEnabled(False)
                 
             # Convert input data to DataFrame
             df = pd.DataFrame(self.data.X, columns=[var.name for var in self.data.domain.attributes])
@@ -280,7 +353,7 @@ class CustomProcessingWidget(OWWidget):
             # Send output
             self.Outputs.data.send(new_data)
             
-            # Update status
+            # Update status with success message
             success_message = (
                 f"Processing complete:\n"
                 f"- {len(new_columns)} new columns added\n"
@@ -297,6 +370,8 @@ class CustomProcessingWidget(OWWidget):
                 f"Traceback:\n{traceback.format_exc()}"
             )
             self.update_status(error_message, True)
+        finally:
+            self.process_button.setEnabled(True)
 
 if __name__ == "__main__":
     from Orange.widgets.utils.widgetpreview import WidgetPreview
